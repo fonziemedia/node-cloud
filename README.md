@@ -109,3 +109,54 @@ Now we can run our application inside the docker container as we did before usin
 > docker run -i -p 3000:3000 -t nodeserver-run
 
 We now have exactly the same application running inside a docker container but this docker container is significantly smaller and it's been optimised to run in production environments.
+
+## Tagging and version control
+
+So far our images have been tagged with 'latest' by default.
+
+We should use a major, minor, fix versioning convention to tag our images i.e 1.0.0
+
+We use the 'docker tag' command to tag our images. Let's give our run image a version of 1.0.0:
+
+> docker tag nodeserver-run nodeserver:1.0.0
+> if you run 'docker images' again you'll see the image id is exactly the same as our nodeserver-run image. Our tag is actually just a tag that points to the same image.
+
+### Publishing to docker.hub
+
+Use 'docker login' to log in to docker hub on the command line
+
+We will need to rename our image to have the name and the tag of the image to match our username, so we'll need to re-reun our docker tag:
+
+> docker tag nodeserver-run 11914901/nodeserver:1.0.0
+
+Now we can use docker push to push our image to docker.hub:
+
+> docker push 11914901/nodeserver:1.0.0
+> Our image will now be hosted and available to other people with access to your namespace to use.
+
+## Usefull commands
+
+Delete a local image:
+
+> docker rmi [imagename]
+
+Pull from docker.hub:
+
+> docker pull [imagename]
+
+Push to docker.hub:
+
+> docker login ;
+> docker push [imagename]
+
+Run an image:
+
+> docker run -i -p 3000:3000 -t [imagename]
+
+Build an image from a docker file:
+
+> docker build -t [imagename] -f [Dockerfilename] .
+
+To see all local images/tags:
+
+> docker images
