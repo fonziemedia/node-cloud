@@ -87,3 +87,25 @@ To run debug env:
 To start debuging using Chrome, open a browser tab and type:
 
 > chrome://inspect
+
+## Building a production Dockerfile
+
+Still from https://github.com/CloudNativeJS/docker node.js docker file templates
+
+1. Pull the 'Dockerfile-run' template:
+
+   > wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/Dockerfile-run
+
+The Dockerfile-run is similar to the Dockerfile we used before but one crucial difference is that does a 2nd build with a node 10 slim image. The node 10 slim image only uses essencial packages/tools reducing the image size drastically. It also doesn't contain a compiler which makes it more secure.
+
+Build the Dockerfile-run image:
+
+> docker build -t nodeserver-run -f Dockerfile-run .
+
+This will build an optimised run image. If you compare the images with 'docker images' you will see the 'nodeserver-run' and node '10-slim' builds are significantly smaller.
+
+Now we can run our application inside the docker container as we did before using docker run:
+
+> docker run -i -p 3000:3000 -t nodeserver-run
+
+We now have exactly the same application running inside a docker container but this docker container is significantly smaller and it's been optimised to run in production environments.
