@@ -1,4 +1,6 @@
-# Creating a Docker Image
+# Cloud Native Development (Windows 10 guide)
+
+## Creating a Docker Image
 
 Packs our application in a image with all the 'dependencies'
 
@@ -6,11 +8,11 @@ Check https://github.com/CloudNativeJS/docker for node.js docker file templates
 
 1. Pull the 'Dockerfile' template:
 
-> wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/Dockerfile'
+> wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/Dockerfile
 
 2. Pull the '.dockerignore' template:
 
-> wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/.dockerignore'
+> wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/.dockerignore
 
 **NOTE: to use wget on Windows 10 you'll need to install it and add it to the OS environment variables, check out this guide on how to do this: https://www.addictivetips.com/windows-tips/install-and-use-wget-in-windows-10/**
 
@@ -41,3 +43,47 @@ Finally we can run our application with:
 This maps port 3000 on the running docker container to port 3000 on our local machine.
 
 Open http://localhost:3000 in your browser.
+
+## Building a dev and debug Dockerfile
+
+Still from https://github.com/CloudNativeJS/docker node.js docker file templates
+
+1. Pull the 'Dockerfile' template:
+
+   > wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/Dockerfile-tools
+
+2. Then, get the run-dev script and the run-debug script:
+   > wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/run-dev
+
+> wget https://raw.githubusercontent.com/CloudNativeJS/docker/master/run-debug
+
+3. Edit the run-dev and run-debug scripts to make sure they are running our application: ./bin/www
+
+Now build the Dockerfile-tools:
+
+> docker build -t nodeserver-tools -f Dockerfile_tools .
+
+This will build the tools image for our application
+
+Now run:
+
+> docker run -i -v %cd%/package.json:/tmp/package.json -v %cd%/node_modules:/tmp/node_modules -w /tmp -t node:10 npm install
+
+to create the package dependencies inside the container
+
+**NOTE: Make sure you have drive sharing turned on in the Docker settings. If you get a firewall error check https://stackoverflow.com/questions/42203488/settings-to-windows-firewall-to-allow-docker-for-windows-to-share-drive/43904051 for a solution**
+
+Now we should be able to run dev and debug environments.
+
+To run dev env:
+
+> docker run -i -p 3000:3000 -v %cd%/:/app -v %cd%/node_modules:/app/node_modules -t nodeserver-tools /bin/run-dev
+> This runs the application in the dev environment
+
+To run debug env:
+
+> docker run -i --expose 9229 -p 9229:9229 -p 3000:3000 -v %cd%/:/app -v %cd%/node_modules:/app/node_modules -t nodeserver-tools /bin/run-debug
+
+To start debuging using Chrome, open a browser tab and type:
+
+> chrome://inspect
