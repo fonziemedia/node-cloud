@@ -226,3 +226,41 @@ As well as allowing you to upgrade Helm also allows us to roll back to previous 
 This is successfully rolled back and we can see that by typing **helm status**
 
 So we can use upgrade and rollback to seamlessly change from one state to another state without losing any uptime of our application.
+
+## Adding Support for Health
+
+As well as providing template docker files and helm charts to simplify packaging and deploying Node.js apps to Kubernetes. [Cloud Native JS](https://cloudnativejs.io/) also provides Node modules for adding health checks to an application. This is all done in the [health checking](https://github.com/CloudNativeJS/cloud-health-connect) project. 
+
+This provides a connect middleware for adding health checks, so liveness and readiness end points to an existing application. To install it we can use npm:
+> npm install @cloudnative/health-connect
+
+Now that we have it in our dependencies, we need to require it into our application, and we can do that in app.js:
+
+### Seting up a HealthChecker
+
+> const health = require('@cloudnative/health-connect');
+>
+>let healthcheck = new health.HealthChecker();
+
+### Adding a PingChecker
+
+> let pingcheck = new health.PingCheck("example.com");
+>
+> healthcheck.registerLivenessCheck(pingcheck);
+
+Register a separate Liveness endpoint:
+> app.use('/live', health.LivenessEndpoint(healthcheck));
+
+Now that we've done that, our application should make a request to that post name, when our liveness end point is hit. Let's restart our application and go to our browser and see our end point. When we refresh, we can now see that we have a registered check, that does a ping check against example.com/80. Now try disconnecting the network on your browser tools to see what happens.
+
+### Adding a readiness endpoint
+
+>app.use("/ready", health.ReadinessEndpoint(healthcheck));
+
+Now let's change our Ping Checker to be done on readyness check instead
+
+> healthcheck.registerReadinessCheck(pingcheck);
+
+Finally, before we can deploy this into Kubernetes, we need to rebuild the Docker image to include our new code changes. To do that, we'll use **docker build** to build an image called nodeserver-run using the Dockerfile-run Dockerfile as before. But as what we're deploying has been re-tagged, we also need to re-tag our Docker image. We do that using **docker tag**. And this time, rather than using a version of 1.0.0 we're going to increase that to 1.1.0 because we have a feature update.
+
+So we now have a fully running application inside kubernetes that has started to leverage the power of the platform itself. By adding our own custom liveness and readiness checks we can make it possible to tell kubernetes when to restart and when to stop sending load to us. And that affects the status of ready, and whether a re-start happens for our application.
