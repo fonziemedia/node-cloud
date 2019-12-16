@@ -335,8 +335,56 @@ This now sets up a ready-made Kubernetes dashboard that shows us lots of informa
 
 Now we're going to extend that dashboard to add some custom chart specifically for our Node.js application that we've deployed. To do that, we're first going to go to the top and select the Add panel button. This lets us add new charts based either on a query first or on choosing a visualization first. Let's click on Add Query. We're going to start by adding the same query that we used when we were just using Prometheus. And that is os_cpu_used_ratio. It auto completes that for us so we can select os_cpu_used_ratio and when we do that, it starts to chart the CPU data that it has for each of our Node server instances. We also have the option of limiting the chart to specific applications or charts or instances by using any of these fields that it shows you in the line. So, we can take our value of os_cpu_used_ratio and make sure that it's specifically for our Node server application by adding an extra filter. And the filter we're going to use is kubernetes_name equals nodeserver-service. 
 
+## Add support for request tracking
+
+### Introduction to OpenTracing
+
+Observability and analysis is much more than just monitoring. It also includes logging and tracing. Inside the tracing section is a technology called Open Tracing which is designed to take a request that comes in to a micro service and track that request as it flows from one micro service to another. This gives us an overall view of the flow of a set of requests and where any bottleneck or performance problem might occur inside that flow. 
+
+Per example, if we are seeing a long request time by the user or at our first service. We need to be able to understand which of the constituent parts is causing that delay. And this is where open tracing comes in. Open tracing provides a standard that collects data from each enabled service. In order to do this it propagates a correlation ID between those services. So, as the request goes from the first service to the second service it's responsible for propagating that ID through the flow. And then each service reports their own data to the open tracing service. It also provides support for sampling and debugging capabilities. Now, open tracing itself is a standard and that standard then gives you a dashboard view of all data. But as a standard it needs to have an implementation. If we look at the CNCF landscape. Under the tracing view, there are at least two implementations. One of those is Jaeger and the other is Zipkin.
+
+### Adding OpenTracing to the app
+
+> npm install appmetrics-zipkin
+
+Edit the app.js file in order to require the module:
+>var zipkin = require('appmetrics-zipkin')({
+>  host: 'localhost',
+>  port: 9411,
+>  serviceName: 'nodeserver'
+>});
+
+The next step is to install and run our zipkin server:
+> docker run -d -p 9411:9411 openzipkin/zipkin:1
+
+This will start sending data to our server for any requests. Restart the server with 'npm start' and browse it to make some requests. Now go to zipkin to see these requests: http://localhost:9411/zipkin
 
 
+### Deploy OpenTracing to Kubernetes
 
+As we've done previously, we can go to Helm Hub and search for charts that meet our needs but unfortunately, there isn't a chart available for Zipkin. However, there is for Jaeger, which is another implementation of Open Tracing. And Jaeger supports exactly the same format of data that you get from Zipkin, so we can use the Jaeger chart instead. Jaeger is in the incubator repository, rather than in the stable repository. So the first thing that we need to do is add the incubator repository to our Helm CLI, using the command that they provide for us there:
+>helm repo add incubator https://kubernetes-charts-incubator.storage.googleapis.com
 
+We next have to install the chart itself, and we can do that using helm install. This will install the incubator/jaeger chart, using the name jaeger, into the namespace jaeger. Now before we do that, one of the things that Jaeger will install is data persistence, to store all of the data that's being sent to it. Running in a development environment, you can choose to run that data store with a much smaller amount of memory.
 
+>helm install --name jaeger --namespace jaeger incubator/jaeger --set cassandra.config.max_heap_size=1024M --set cassandra.config.heap_new_size=256M --set cassandra.resources.requests.memory=2048Mi --set cassandra.resources.requests.cpu=0.4 --set cassandra.resources.limits.memory=2048Mi --set cassandra.resources.limits.cpu=0.4
+
+The process that Jaeger uses, starts up some of the servers and the database, and the servers will continue to restart until the database is fully deployed, populated, and its data structures are set up. So this may take a few minutes, and running helm status may show you that containers are restarting. Whilst that continues, we can update our app and set it so that it will send its data to the new location. To do that, we go into our app directory, and let's open VS Code. Here, the host we've got set currently, is localhost. And we're going to need to change that so it matches the location of the Jaeger server that we've deployed. Again, this matches the naming pattern that we used for Prometheus:
+
+>var zipkin = require('appmetrics-zipkin')({
+  host: 'jaeger-collector.jaeger.svc.cluster.local',
+  port: 9411,
+  serviceName: 'nodeserver'
+});
+
+We'll be sending data to the service called jaeger-collector that's in the jaeger namespace, and then we add svc.cluster.local, as the standard internal DNS inside Kubernetes for services to talk to each other.
+
+Now that we've set that, we can save our application and build a new Docker image for our application and as we've added a new feature to our application, we should again retag it, this time with version 1.3.0. And finally, we should open our Helm chart, and make sure it's using the new version. To do that, we'll go into VS Code, go to our chart directory, look at our values.yaml file, and change our tag to 1.3.0, and hit save. 
+
+Finally, let's check to see whether our Jaeger server's been deployed correctly. To do that, we use helm status jaeger. This shows us that all of the pods are now up and running, and it gives us some instructions on how to port forward, so map the port from one of the pods through to our localhost so that we can look at it in the browser:
+
+>$POD_NAME=$(kubectl get pods --namespace jaeger -l "app.kubernetes.io/instance=jaeger,app.kubernetes.io/component=query" -o jsonpath="{.items[0].metadata.name}")
+
+>kubectl port-forward --namespace jaeger $POD_NAME 8080:16686
+
+Now that we've opened port 8080, we can see the Jaeger UI. We can also see on the left hand side, that it is aware of our service. So we can click on that, and we can click Find Traces, it will display to us all of the calls that had been made of our service, including giving it a full timeline.
