@@ -200,15 +200,23 @@ To see the status of our deployment we can use **helm status** and use the name 
 
 This now shows us that we have a pod which is running. Pod is the Kubernetes name for an instance, and this shows that we have one instance of our node server running.
 
-To get this running on Windows you'll need to port-forward your deployment and map it to port 3000:
+Follow the instructions given to get the IP and PORT numbers of your application. In Windows PowerShell we would do:
+>$SAMPLE_NODE_PORT=$(kubectl get --namespace default -o jsonpath="{.spec.ports[0].nodePort}" services nodeserver-service)
+>
+>$SAMPLE_NODE_IP=$(kubectl get nodes --namespace default -o jsonpath="{.items[0].status.addresses[0].address}")
+>
+
+then:
+>start http://${SAMPLE_NODE_IP}:${SAMPLE_NODE_PORT}
+
+or:
+>start http://localhost:${SAMPLE_NODE_PORT}
+
+You can also use port-fowarding to map it to a specific port:
 
 > kubectl port-forward deployment/[DEPLOYMENT_NAME] [PORT_NUMBER]:3000
 
-You can also port-forward and individual deployment:
-
-> kubectl port-forward [PODNAME] [PORT_NUMBER]:3000
-
-That deployed a single instance of our application and that's controlled by this value in the **values.yaml** in the Helm chart which is replicate which was set to one.
+That deployed a single instance of our application and that's controlled by the **replicaCount** value in the **values.yaml** in the Helm chart which is set to one by default.
 
 Before we can change that let's go to the CLI and actually delete our existing deployment, let's first go to our project directory and then type:
 
@@ -264,3 +272,71 @@ Now let's change our Ping Checker to be done on readyness check instead
 Finally, before we can deploy this into Kubernetes, we need to rebuild the Docker image to include our new code changes. To do that, we'll use **docker build** to build an image called nodeserver-run using the Dockerfile-run Dockerfile as before. But as what we're deploying has been re-tagged, we also need to re-tag our Docker image. We do that using **docker tag**. And this time, rather than using a version of 1.0.0 we're going to increase that to 1.1.0 because we have a feature update.
 
 So we now have a fully running application inside kubernetes that has started to leverage the power of the platform itself. By adding our own custom liveness and readiness checks we can make it possible to tell kubernetes when to restart and when to stop sending load to us. And that affects the status of ready, and whether a re-start happens for our application.
+
+## Add support for metrics
+
+### Prometheus
+Prometheus is a metrics system that collects data from both Kubernetes itself and from any Prometheus-enabled application
+
+As with a number of the other components, [CloudNativeJS](https://www.cloudnativejs.io/) provides support for adding Prometheus-style metrics to your application.
+
+Here what's provided is an npm module called appmetrics-prometheus, which collects application metrics and makes it available to Prometheus.
+
+**Note: On Windows, before you can install appmetrics-prometheus you'll need have Python installed (you can use Chocolatey to install it) and the windows-build-tools npm package ("npm install --global --production windows-build-tools") **
+
+Once all the above pre-requisites are met:
+>npm install appmetrics-prometheus
+
+Next we need to include that into app.js. To do that, we go to the top of our file, and we require in the module:
+>var prom = require('appmetrics-prometheus').attach();
+
+That's all we need to do. This has required the module into our application, and told it to attach to the Express server that it finds, and this is then going to expose a /metrics endpoint which Prometheus will use to collect data.
+
+Now we restart our application, we should have a **/metrics** end point. 
+
+This provides a lot of statistical data about our application. This isn't particularly human-readable, but it doesn't need to be, because Prometheus is going to gather this data and use it to display graphs and charts that you're going to create yourself. 
+
+Update our Docker image to include these changes using **docker build**. Also, remember to tag it as we've added a new feature: 1.2.0.
+
+Finally, we need to remember to update our chart to use the 1.2.0 version, and we do that inside the chart directory in our **values.yaml**. We save that change, and now we can redeploy our application into Kubernetes to have the metrics running live in Kubernetes.
+
+### Deploy Prometheus to Kubernetes
+We still, however, need to install Prometheus into our Kubernetes cluster. Luckily, Helm Hub already has support for Prometheus. So, we can go to Helm Hub, and search the charts for Prometheus:
+> helm install --name prometheus stable/prometheus --version 9.5.2 --namespace prometheus
+
+Then follow the post-install instructions given or in Windows:
+>$POD_NAME=$(kubectl get pods --namespace prometheus -l "app=prometheus,component=server" -o jsonpath="{.items[0].metadata.name}")
+>
+>kubectl --namespace prometheus port-forward $POD_NAME 9090
+
+Now you'll be able to see our prometheus server on http://localhost:9090/
+
+### Deploy Grafana to Kubernetes
+
+> helm install --name grafana stable/grafana --namespace grafana --set adminPassword=PASSWORD
+
+Use the post-install instructions. Or on Windows:
+>$POD_NAME=$(kubectl get pods --namespace grafana -l "app=grafana,release=grafana" -o jsonpath="{.items[0].metadata.name}")
+>
+>kubectl --namespace grafana port-forward $POD_NAME 3000
+
+This is now forwarding requests to local host 3000 through to our Grafana server. So let's open the browser and go to local host 3000. And here's our Grafana dashboard. Now, it'll ask us to log in and we set the admin password to PASSWORD. This now logs us in to Grafana.
+
+Start by a adding a data source which will be Prometheus as we've already installed it and is up and running. So we can click on the Prometheus box. Now, this requires us to put in a URL for where to find the Prometheus deployment:
+> prometheus.server.prometheus.svc.cluster.local.
+
+The first of that Prometheus server is the name of our deployment, and the second Prometheus was the namespace that we deployed it into. So this is why we gave Prometheus a namespace is also to make it easier to name it here.
+
+Save and Test, which will save the configuration and test the Prometheus as reachable. This shows us that our data source is working and it's successfully connected to the Prometheus data store. Next, we're going to want to be able to create a dashboard. Now, Grafana itself provides a community of dashboards that are already available. So you can go to the Grafana website and search for various different types of dashboards. And we're going to use one of those to import, to bootstrap ourselves and have a ready-made Kubernetes dashboard. To do that, we click on the plus button and hit Import. We'll save our changes and then we'll enter an ID of a dashboard. Here we'll use 1621, which we could find from the dashboard page. And we'll hit Load. This is a Kubernetes cluster monitoring dashboard that has been provided as part of the community. Change the Prometheus setting to use our Prometheus data store and hit Import.
+
+This now sets up a ready-made Kubernetes dashboard that shows us lots of information about our Kuberenetes install itself. It can show us how much memory is being used, how much CPU is being used, how much file system is being used.
+
+### Build charts for your applications
+
+Now we're going to extend that dashboard to add some custom chart specifically for our Node.js application that we've deployed. To do that, we're first going to go to the top and select the Add panel button. This lets us add new charts based either on a query first or on choosing a visualization first. Let's click on Add Query. We're going to start by adding the same query that we used when we were just using Prometheus. And that is os_cpu_used_ratio. It auto completes that for us so we can select os_cpu_used_ratio and when we do that, it starts to chart the CPU data that it has for each of our Node server instances. We also have the option of limiting the chart to specific applications or charts or instances by using any of these fields that it shows you in the line. So, we can take our value of os_cpu_used_ratio and make sure that it's specifically for our Node server application by adding an extra filter. And the filter we're going to use is kubernetes_name equals nodeserver-service. 
+
+
+
+
+
+
